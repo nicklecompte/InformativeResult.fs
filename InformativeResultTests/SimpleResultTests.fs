@@ -1,0 +1,3 @@
+module SimpleResultTests
+
+open InformativeResult

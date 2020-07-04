@@ -1,4 +1,4 @@
-module Prelude
+module InformativeResult
 
 (*
 The result types here help to distinguish at a type level errors that arise
@@ -12,6 +12,12 @@ type SimpleResult<'TOk,'TError, 'TCritical> =
     | Failure of 'TError
     | CriticalFailure of 'TCritical
 
+/// InformativeResult is a type which essentially extends a Result<'OK,'Error> type with
+///   - the distinction between a (user, handled, acceptable) 'TError and
+///   - a more severe (.NET, F#, CPU, etc) 'TCriticalError;
+/// and also includes "information" with a monoidal (additive) requirement.
+/// Note that this means the default addition may induce excessive string allocations for
+/// a reasonable "quick n dirty" System.String 'TInfo / 'TWarning.
 type InformativeResult<
        'TSuccess,
        'TInfo,
@@ -20,6 +26,10 @@ type InformativeResult<
        'TErrorInfo,     
        'TCriticalError, 
        'TCriticalInfo
+           when 'TInfo : (static member (+) : ('TInfo * 'TInfo) -> 'TInfo)
+           and  'TWarning : (static member (+) : ('TWarning * 'TWarning) -> 'TWarning)
+           and  'TErrorInfo : (static member (+) : ('TErrorInfo * 'TErrorInfo) -> 'TErrorInfo)
+           and  'TCriticalInfo : (static member (+) : ('TCriticalInfo * 'TCriticalInfo) -> 'TCriticalInfo)
     > =
     // Quick OK with nothing to report
     | OK of 'TSuccess
@@ -35,6 +45,9 @@ type InformativeResult<
     // The PROGRAM made a mistake.
     // Example : ("Unhandled exception! Please file an issue at https://github.com/ ...", new System.DivideByZeroException)
     | Critical of 'TCriticalInfo * 'TCriticalError
+
+/// A standard InformativeResult, 
+type InfoResult<'TS,'TI,'TW,'TE> = InformativeResult<'TS,'TI,'TI,'TE,'TI,'TC,'TI>
 
 type ResultErrorLevel =
     | OK
@@ -67,9 +80,29 @@ module SimpleResult =
 [<RequireQualifiedAccess>]
 module InformativeResult =
 
-    let bind (a : InformativeResult<'SA,'I,'W,'E,'EI,'C,'CI>)
+    /// WARNING: FAILS if a is a successful InformativeResult (InformativeResult.isSuccess = true)
+    let private failureLiftHelper<'SA,'SB> (a: InformativeResult<'SA,'I,'W,'E,'EI,'C,'CI>) : InformativeResult<'SB,'I,'W,'E,'EI,'C,'CI> =
+        match a with
+        | OK _ -> invalidArg "a" "failureLiftHelper cannot handle success cases"
+        | InformativeOK(i,_) -> invalidArg "a" "failureLiftHelper cannot handle success cases"
+        | WarningOK(w,_) -> invalidArg "a" "failureLiftHelper cannot handle success cases"
+        | Error(i,e) -> Error(i,e)
+        | Critical(i,c) -> Critical(i,c)
+
+    let addWarning<'I,'E,'EI,'C,'CI> (a: 'Success) (b: 'Warn) : InformativeResult<'Success,'I,'Warn.'E,'EI,'C,'CI> =
+        WarningOK(b,a)
+
+    let addInfo<'W,'E,'EI,'C,'CI> (a: 'Success) (b : 'Info)  : InformativeResult<'Success,'Info,'W.'E,'EI,'C,'CI> =
+        InformativeOK(b,a)
+
+    let simpleBind (a : InformativeResult<'SA,'I,'W,'E,'EI,'C,'CI>)
              (nextStep : 'S -> InformativeResult<'SB,'I,'W,'E,'EI,'C,'CI>) :
-             InformativeResult<'SB,'I,'W,'E,'EI,'CI
+             InformativeResult<'SB,'I,'W,'E,'EI,'CI> =
+        match a with
+            | OK t -> nextStep t
+            | InformativeOK(i,t) -> nextStep t
+            | WarningOK(w,t) 
+            | _ -> liftHelper a
 
     let liftSimpleResult (result : SimpleResult<'T,'U,'V>) : InformativeResult<'T,_,_,'U,str,'V,str> =
         match result with
