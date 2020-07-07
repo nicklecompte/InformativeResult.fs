@@ -8,9 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="../InformativeResult.fs">
+    <Compile Include="../InformativeResult.fs"/>
     <Compile Include="SimpleResultTests.fs" />
-    <Compile Include="InformativeResultTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -7,7 +7,7 @@ logic (for instance, handled .NET exceptions). For ins
 *)
 
 /// Lazier (in the human sense) but quicker than InformativeResult.
-type SimpleResult<'TOk,'TError, 'TCritical> =
+type SimpleResult<'TOK,'TError, 'TCritical> =
     | Success of 'TOK
     | Failure of 'TError
     | CriticalFailure of 'TCritical
@@ -26,10 +26,11 @@ type InformativeResult<
        'TErrorInfo,     
        'TCriticalError, 
        'TCriticalInfo
-           when 'TInfo : (static member (+) : ('TInfo * 'TInfo) -> 'TInfo)
-           and  'TWarning : (static member (+) : ('TWarning * 'TWarning) -> 'TWarning)
-           and  'TErrorInfo : (static member (+) : ('TErrorInfo * 'TErrorInfo) -> 'TErrorInfo)
-           and  'TCriticalInfo : (static member (+) : ('TCriticalInfo * 'TCriticalInfo) -> 'TCriticalInfo)
+           // when 'TInfo : (static member (+) : ('TInfo * 'TInfo) -> 'TInfo)
+           // and  'TWarning : (static member (+) : ('TWarning * 'TWarning) -> 'TWarning)
+           // and  'TErrorInfo : (static member (+) : ('TErrorInfo * 'TErrorInfo) -> 'TErrorInfo)
+           // and  'TCriticalInfo : (static member (+) : ('TCriticalInfo * 'TCriticalInfo) -> 'TCriticalInfo
+   //                               )
     > =
     // Quick OK with nothing to report
     | OK of 'TSuccess
@@ -46,18 +47,15 @@ type InformativeResult<
     // Example : ("Unhandled exception! Please file an issue at https://github.com/ ...", new System.DivideByZeroException)
     | Critical of 'TCriticalInfo * 'TCriticalError
 
-/// A standard InformativeResult, 
-type InfoResult<'TS,'TI,'TW,'TE> = InformativeResult<'TS,'TI,'TI,'TE,'TI,'TC,'TI>
+// type ResultErrorLevel =
+//     | OK
+//     | Info
+//     | Warning
+//     | Error
+//     | Critical
 
-type ResultErrorLevel =
-    | OK
-    | Info
-    | Warning
-    | Error
-    | Critical
-
-type StandardResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo> =
-    InformativeResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo, exn, string>
+// type StandardResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo> =
+//     InformativeResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo, exn, string>
     
 [<RequireQualifiedAccess>]
 module SimpleResult =
@@ -80,7 +78,10 @@ module SimpleResult =
 [<RequireQualifiedAccess>]
 module InformativeResult =
 
-    /// WARNING: FAILS if a is a successful InformativeResult (InformativeResult.isSuccess = true)
+    /// Private helper function for mapping between two InformativeResults with differing
+    /// success types but otherwise are identical.
+    /// WARNING: FAILS if a is a successful InformativeResult (InformativeResult.isSuccess = true).
+    /// Callers 
     let private failureLiftHelper<'SA,'SB> (a: InformativeResult<'SA,'I,'W,'E,'EI,'C,'CI>) : InformativeResult<'SB,'I,'W,'E,'EI,'C,'CI> =
         match a with
         | OK _ -> invalidArg "a" "failureLiftHelper cannot handle success cases"
@@ -89,27 +90,28 @@ module InformativeResult =
         | Error(i,e) -> Error(i,e)
         | Critical(i,c) -> Critical(i,c)
 
-    let addWarning<'I,'E,'EI,'C,'CI> (a: 'Success) (b: 'Warn) : InformativeResult<'Success,'I,'Warn.'E,'EI,'C,'CI> =
+    let addWarning (a: 'Success) (b: 'Warn) : InformativeResult<'Success,_,'Warn,_,_,_,_> =
         WarningOK(b,a)
 
-    let addInfo<'W,'E,'EI,'C,'CI> (a: 'Success) (b : 'Info)  : InformativeResult<'Success,'Info,'W.'E,'EI,'C,'CI> =
+    let addInfo (a: 'Success) (b : 'Info)  : InformativeResult<'Success,'Info,_,_,_,_,_> =
         InformativeOK(b,a)
 
     let simpleBind (a : InformativeResult<'SA,'I,'W,'E,'EI,'C,'CI>)
              (nextStep : 'S -> InformativeResult<'SB,'I,'W,'E,'EI,'C,'CI>) :
-             InformativeResult<'SB,'I,'W,'E,'EI,'CI> =
+             InformativeResult<'SB,'I,'W,'E,'EI,'C,'CI> =
         match a with
             | OK t -> nextStep t
             | InformativeOK(i,t) -> nextStep t
-            | WarningOK(w,t) 
-            | _ -> liftHelper a
-
-    let liftSimpleResult (result : SimpleResult<'T,'U,'V>) : InformativeResult<'T,_,_,'U,str,'V,str> =
-        match result with
-        | Success t -> OK t
-        | Failure u -> Error ("Unspecified failure",u)
-        | CriticalFailure c ->
-            Critical ("Unspecified critical failure, please open an issue on Github",c)
+            | WarningOK(w,t) -> nextStep t
+            | _ -> failureLiftHelper a
+            
+  
+    // let liftSimpleResult (result : SimpleResult<'T,'U,'V>) : InformativeResult<'T,_,_,'U,System.String,'V,System.String> =
+    //     match result with
+    //     | Success t -> OK t
+    //     | Failure u -> Error ("Unspecified failure",u)
+    //     | CriticalFailure c ->
+    //         Critical ("Unspecified critical failure, please file a bug report",c)
 
     let isSuccess result =
         match result with
@@ -122,46 +124,46 @@ module InformativeResult =
     let toSuccessVal result =
         match result with
         | OK r -> Some r
-        | InformativeOK (,r) -> Some r
-        | Warning (_,r) -> Some r
+        | InformativeOK (_,r) -> Some r
+        | WarningOK (_,r) -> Some r
         | _ -> None
 
     let toErrorVal result =
         match result with
         | Error (_,e) -> Some e
-        | Critical (_,e) -> Some r
+        | Critical (_,e) -> Some e
         | _ -> None
 
     let toSimpleResult result =
         match result with
         | OK t -> Success t
-        | InformativeOk(_,t) -> Success t
-        | Warning(_,t) -> Success t
+        | InformativeOK(_,t) -> Success t
+        | WarningOK(_,t) -> Success t
         | Error(_,e) -> Failure e
         | Critical(_,e) -> Failure e
         
-let resultErrorLevelIsSuccess level =
-    match level with
-        | OK -> true
-        | Info -> true
-        | Warning -> true
-        | Error -> false
-        | Critical -> false
+    // let resultErrorLevelIsSuccess level =
+    //     match level with
+    //         | OK -> true
+    //         | Info -> true
+    //         | Warning -> true
+    //         | Error -> false
+    //         | Critical -> false
 
-let resultToErrorLevel result =
-    match result with
-        | OK _ -> OK
-        | InformativeOK _ -> Info
-        | WarningOK _ -> Warning
-        | Error _ -> Error
-        | Critical _ -> Critical
+    // let resultToErrorLevel result =
+    //     match result with
+    //         | OK _ -> OK
+    //         | InformativeOK _ -> Info
+    //         | WarningOK _ -> Warning
+    //         | Error _ -> Error
+    //         | Critical _ -> Critical
 
-    let changeResultErrorLevel (result : InformativeResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo, 'TCriticalError, 'TCriticalInfo when
-           'TInfo : new and
-           'TErrorInfo : new and
-           'TCriticalInfo : new>) toErrorLevel successToLevelFunc = 
-        match result with
-        | OK t ->
-            match toErrorLevel with
-            | OK -> OK t
-            | Info -> InformativeOK<
+ //   let changeResultErrorLevel (result : InformativeResult<'TSuccess,'TInfo,'TWarning,'TError,'TErrorInfo, 'TCriticalError, 'TCriticalInfo when
+//                                'TInfo : new and
+//                                'TErrorInfo : new and
+//                                'TCriticalInfo : new>) toErrorLevel successToLevelFunc = 
+//        match result with
+//        | OK t ->
+//            match toErrorLevel with
+//            | OK -> OK t
+//            | Info -> InformativeOK<
